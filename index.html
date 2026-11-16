@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RISC-V to WASM</title>
+  <style>
+    body { font-family: monospace; background: #fff; color: #333; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+    h1 { color: #000; font-size: 18px; margin-bottom: 12px; }
+    .bar { display: flex; gap: 10px; margin-bottom: 12px; }
+    button, select { font: inherit; padding: 4px 12px; }
+    .container { display: flex; gap: 20px; width: 100%; max-width: 1000px; height: 75vh; }
+    .box { border: 1px solid #ccc; padding: 15px; background: #f5f5f5; display: flex; flex-direction: column; min-width: 0; }
+    .code-box { flex: 2; }
+    .side { flex: 1.5; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .box > h2 { font-size: 12px; text-transform: uppercase; color: #666; margin: 0 0 15px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+    textarea { flex: 1; font: 13px monospace; border: none; background: transparent; resize: none; outline: none; tab-size: 4; }
+    #output { flex: 1; font-size: 32px; font-weight: bold; color: #000; display: flex; align-items: center; justify-content: center; text-align: center; overflow: auto; }
+    #output.err { font-size: 12px; font-weight: normal; color: #c00; white-space: pre-wrap; align-items: flex-start; justify-content: flex-start; text-align: left; }
+    #hex { flex: 2; overflow-y: auto; margin: 0; font-size: 11px; line-height: 1.4; color: #444; }
+    @media (max-width: 700px) { .container { flex-direction: column; height: auto; } textarea { min-height: 300px; } }
+  </style>
+</head>
+<body>
+  <h1>RISC-V to WASM Translator</h1>
+  <div class="bar">
+    <select id="examples">
+      <option value="cool_examples/01_fibonacci.s">01_fibonacci</option>
+      <option value="cool_examples/02_collatz_conjecture.s">02_collatz_conjecture</option>
+      <option value="cool_examples/03_hello_web.s">03_hello_web</option>
+      <option value="cool_examples/04_pattern_generator.s">04_pattern_generator</option>
+      <option value="cool_examples/05_store.s">05_store</option>
+    </select>
+    <button id="go">Translate &amp; Run</button>
+  </div>
+  <div class="container">
+    <div class="box code-box"><h2>RISC-V Source</h2><textarea id="src" spellcheck="false"></textarea></div>
+    <div class="side">
+      <div class="box" style="flex:1"><h2>WASM Output</h2><div id="output">...</div></div>
+      <div class="box" style="flex:2"><h2>WASM Code (Hex)</h2><pre id="hex"></pre></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import gasLoader from "https://cdn.jsdelivr.net/npm/@binutils-wasm/gas@0.2.0/dist/index.mjs";
+    import { compile } from "./rv32.js";
+
+    const $ = (id) => document.getElementById(id);
+    const translator = fetch("wasm.s").then((r) => r.text());
+    const load = async () => { $("src").value = await (await fetch($("examples").value)).text(); };
+
+    $("examples").onchange = load;
+    $("go").onclick = async () => {
+      const out = $("output");
+      out.className = ""; out.textContent = "..."; $("hex").textContent = "";
+      try {
+        const bytes = await compile($("src").value, await translator, gasLoader);
+        $("hex").textContent = [...bytes].map((b, i) =>
+          b.toString(16).padStart(2, "0").toUpperCase() + ((i + 1) % 16 ? ((i + 1) % 8 ? " " : "  ") : "\n")).join("");
+        const { instance } = await WebAssembly.instantiate(bytes);
+        const result = instance.exports.main();
+        const mem = new Uint8Array(instance.exports.memory.buffer);
+        let str = "";
+        for (let i = result; i >= 0 && i < mem.length && mem[i]; i++) str += String.fromCharCode(mem[i]);
+        if (str) out.innerHTML = str; else out.textContent = result;   // string at a0, else the number
+      } catch (e) {
+        out.className = "err"; out.textContent = e.message;
+      }
+    };
+    load();
+  </script>
+</body>
+</html>
